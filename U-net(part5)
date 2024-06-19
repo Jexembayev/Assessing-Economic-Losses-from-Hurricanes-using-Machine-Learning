@@ -1,0 +1,113 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
+from tqdm import tqdm
+
+class UNet(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(UNet, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv2d(in_channels, 64, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.middle = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, out_channels, kernel_size=1)
+        )
+    
+    def forward(self, x):
+        enc = self.encoder(x)
+        middle = self.middle(enc)
+        dec = self.decoder(middle)
+        return dec
+
+class CustomDataset(Dataset):
+    def __init__(self, pre_images, post_images, masks, transform=None):
+        self.pre_images = pre_images
+        self.post_images = post_images
+        self.masks = masks
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.pre_images)
+
+    def __getitem__(self, idx):
+        pre_image = self.pre_images[idx]
+        post_image = self.post_images[idx]
+        mask = self.masks[idx]
+        
+        if self.transform:
+            pre_image = self.transform(pre_image)
+            post_image = self.transform(post_image)
+            mask = self.transform(mask)
+        
+        combined_image = torch.cat((pre_image, post_image), dim=0)
+        return combined_image, mask
+
+# Создаем и обучаем модель для задачи локализации
+def train_localization_model(train_loader, model, criterion, optimizer, num_epochs=5):
+    model.train()
+    for epoch in range(num_epochs):
+        running_loss = 0.0
+        for inputs, masks in tqdm(train_loader):
+            inputs, masks = inputs.to(device), masks.to(device)
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, masks)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader)}")
+
+# Создаем и обучаем модели для классификации повреждений
+def train_damage_classification_models(train_loader, models, criterion, optimizers, num_epochs=5):
+    for i, model in enumerate(models):
+        model.train()
+        for epoch in range(num_epochs):
+            running_loss = 0.0
+            for inputs, masks in tqdm(train_loader):
+                inputs, masks = inputs.to(device), masks.to(device)
+                optimizer = optimizers[i]
+                optimizer.zero_grad()
+                outputs = model(inputs)
+                loss = criterion(outputs, (masks > (i + 1)).float())
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+            print(f"Model {i+1}, Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader)}")
+
+# Параметры обучения
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+num_epochs = 5
+learning_rate = 0.001
+batch_size = 8
+
+# Загрузка данных и подготовка DataLoader
+transform = transforms.Compose([transforms.ToTensor()])
+train_dataset = CustomDataset(pre_images, post_images, masks, transform=transform)
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+# Локализация
+localization_model = UNet(6, 1).to(device)
+criterion = nn.BCEWithLogitsLoss()
+optimizer = optim.Adam(localization_model.parameters(), lr=learning_rate)
+train_localization_model(train_loader, localization_model, criterion, optimizer, num_epochs=num_epochs)
+
+# Классификация повреждений
+damage_models = [UNet(6, 1).to(device) for _ in range(3)]
+optimizers = [optim.Adam(model.parameters(), lr=learning_rate) for model in damage_models]
+train_damage_classification_models(train_loader, damage_models, criterion, optimizers, num_epochs=num_epochs)
