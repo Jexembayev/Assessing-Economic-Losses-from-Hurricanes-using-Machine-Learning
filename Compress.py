@@ -2,21 +2,6 @@ import os
 import argparse
 
 def compress_tif(original_tif, compression_method="JPEG", predictors=2, new_directory="compressed/"):
-    """
-    This function takes an uncompressed GeoTIFF and compresses it with one of four compression methods:
-        - Packbits
-        - JPEG
-        - Deflate
-        - LZW
-    For LZW and Deflate, you can choose the number of predictors.
-
-    :param original_tif: The uncompressed GeoTIFF to be compressed
-    :param compression_method: Packbits, JPEG, Deflate, or LZW
-    :param predictors: Default is 2
-    :param new_directory: Directory to save the compressed TIF
-    :return: Creates a new compressed TIF in the specified directory
-    """
-
     new_tif_base = os.path.splitext(original_tif)[0]
     output_files = {
         "Packbits": f"{new_tif_base}_packbit_compressed.tif",
@@ -39,15 +24,6 @@ def compress_tif(original_tif, compression_method="JPEG", predictors=2, new_dire
         raise ValueError("Invalid compression method. Choose from: Packbits, JPEG, Deflate, LZW.")
 
 def compress_directory(directory_name, new_directory, compression_method="JPEG", predictors=2):
-    """
-    Compresses a directory of TIFFs.
-
-    :param directory_name: Directory containing uncompressed TIFFs
-    :param new_directory: Directory to save compressed TIFs
-    :param compression_method: JPEG, Packbits, Deflate, or LZW
-    :param predictors: Default is 2
-    :return: A new directory populated with compressed TIFFs
-    """
 
     if not os.path.exists(new_directory):
         os.mkdir(new_directory)
